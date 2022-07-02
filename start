@@ -1,0 +1,5 @@
+#!/bin/bash
+echo "Downloading"
+python downloader.py
+echo "Preprocessing"
+python preprocess.py

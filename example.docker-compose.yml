@@ -1,0 +1,10 @@
+version: '3.3'
+
+services:
+  converter:
+    image: ipinfo:latest
+    build:
+      context: .
+    volumes:
+      - ./temp:/app/temp
+    command: bash start
