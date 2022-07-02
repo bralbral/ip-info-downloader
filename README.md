@@ -1,29 +1,35 @@
 
-# IpInfo
+# ip-info-downloader
 
-
-https://lite.ip2location.com/database/px11-ip-proxytype-country-region-city-isp-domain-usagetype-asn-lastseen-threat-residential-provider
-https://lite.ip2location.com/database-asn
-https://lite.ip2location.com/database/db11-ip-country-region-city-latitude-longitude-zipcode-timezone
-***A special repository for building docker images and artifacts for 214 cabinet.***
+***Easy way to download ip databases in CSV format from https://lite.ip2location.com/***
 
 
 Getting Started
 -------------
 
-1. Create new requirements file using a template ```{your_project}_requirements.txt```.
+Linux
+1. ```git clone https://github.com/bralbral/ip-info-downloader.git```
+2. ```cd ip-info-downloader```
+3. ```pip install -r requirements.txt```
+4. ```bash start```
+5. Grab results from ip-info-downloader/temp
+
+docker-compose
+1. ```git clone https://github.com/bralbral/ip-info-downloader.git```
+2. ```cd ip-info-downloader```
+3. ```docker-compose up```
+5. Grab results from ip-info-downloader/temp
 
 
-2. Test it using ``` sh pip_test_env.bash {your_project}_requirements.txt```.
+Files
+-------------
+Source
 
+1. [Proxy info](https://lite.ip2location.com/database/px11-ip-proxytype-country-region-city-isp-domain-usagetype-asn-lastseen-threat-residential-provider)
+2. [Asn](https://lite.ip2location.com/database-asn)
+3. [GeoIp](https://lite.ip2location.com/database/db11-ip-country-region-city-latitude-longitude-zipcode-timezone)
 
-3. Just Commit to [main branch](https://github.com/bralbral/PythonDockerImages/tree/main)
+Converted
 
-
-4. Check [actions](https://github.com/bralbral/PythonDockerImages/actions) to collect latest artifacts.
-  ![Alt text](artifacts.png?raw=true "artifacts")
-
-
-5. Check [dockerhub](https://hub.docker.com/r/bral1488/python_docker_builder/tags) repo to collect latest images.
-  ![Alt text](dockerhub.png?raw=true "dockerhub")
-
+For each source file, a ```converted_*``` file will be created.
+Mapping is equivalent to the original one and in addition a [cidr](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) field has been added
