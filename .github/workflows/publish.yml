@@ -12,57 +12,131 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+
     env:
       IP2LOCATION_TOKEN: ${{ secrets.IP2LOCATION_TOKEN }}
       OUTPUT_DIR: dist
       DOWNLOAD_DIR: downloads
+
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: bash start.sh
+
+      - name: Download and prepare databases
+        run: bash start.sh
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+
           tag="ip-data-$(date -u +%F)"
+
           if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Updating existing release: $tag"
             gh release upload "$tag" dist/* --clobber
-            gh release edit "$tag" --notes-file RELEASE_NOTES.md
+            gh release edit "$tag" \
+              --title "$tag" \
+              --notes-file RELEASE_NOTES.md
           else
-            gh release create "$tag" dist/* --title "$tag" --notes-file RELEASE_NOTES.md --latest=false
+            echo "Creating release: $tag"
+            gh release create "$tag" dist/* \
+              --title "$tag" \
+              --notes-file RELEASE_NOTES.md \
+              --latest=false
           fi
+
       - name: Delete releases and tags older than one month
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          cutoff_time="$(date -u -d '1 month ago' +%FT%TZ)"
-          cutoff_date="${cutoff_time%%T*}"
+          cutoff_date="$(date -u -d '1 month ago' +%F)"
+          tag_pattern='^ip-data-([0-9]{4}-[0-9]{2}-[0-9]{2})$'
 
-          mapfile -t old_releases < <(
+          echo "Deleting generated releases older than: $cutoff_date"
+
+          # Tag names contain ISO dates, so lexicographic sorting also sorts
+          # them chronologically. Do not use release.createdAt here:
+          # GitHub derives it from the tagged commit date.
+          mapfile -t release_tags < <(
             gh release list \
               --limit 1000 \
-              --json tagName,createdAt \
-              --jq ".[] | select(.tagName | test(\"^ip-data-[0-9]{4}-[0-9]{2}-[0-9]{2}$\")) | select(.createdAt < \"$cutoff_time\") | .tagName"
+              --json tagName \
+              --jq '.[].tagName' |
+              awk '/^ip-data-[0-9]{4}-[0-9]{2}-[0-9]{2}$/' |
+              sort -r
           )
 
-          for tag in "${old_releases[@]}"; do
-            echo "Deleting old release and tag: $tag"
-            gh release delete "$tag" --cleanup-tag --yes
+          # Always retain the newest generated release. This also protects
+          # the only remaining release when every release is older than
+          # the retention period.
+          newest_release_tag="${release_tags[0]:-}"
+
+          if [[ -n "$newest_release_tag" ]]; then
+            echo "Newest release is protected: $newest_release_tag"
+          else
+            echo "No generated releases found"
+          fi
+
+          for tag in "${release_tags[@]}"; do
+            if [[ "$tag" == "$newest_release_tag" ]]; then
+              continue
+            fi
+
+            if [[ "$tag" =~ $tag_pattern ]]; then
+              release_date="${BASH_REMATCH[1]}"
+
+              if [[ "$release_date" < "$cutoff_date" ]]; then
+                echo "Deleting old release and tag: $tag"
+                gh release delete "$tag" --cleanup-tag --yes
+              else
+                echo "Retaining release within retention period: $tag"
+              fi
+            fi
           done
 
-          mapfile -t release_tags < <(
+          # Build a set of tags still associated with generated releases.
+          declare -A active_release_tags=()
+
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && active_release_tags["$tag"]=1
+          done < <(
+            gh release list \
+              --limit 1000 \
+              --json tagName \
+              --jq '.[].tagName' |
+              awk '/^ip-data-[0-9]{4}-[0-9]{2}-[0-9]{2}$/'
+          )
+
+          # Remove old generated tags that no longer have a release.
+          # Tags backing active releases are never touched.
+          mapfile -t remote_tags < <(
             git ls-remote --tags --refs origin 'refs/tags/ip-data-*' |
               awk '{ sub(/^refs\/tags\//, "", $2); print $2 }'
           )
 
-          for tag in "${release_tags[@]}"; do
-            if [[ "$tag" =~ ^ip-data-([0-9]{4}-[0-9]{2}-[0-9]{2})$ ]] &&
-               [[ "${BASH_REMATCH[1]}" < "$cutoff_date" ]]; then
-              echo "Deleting old orphaned tag: $tag"
-              git push origin --delete "$tag"
+          for tag in "${remote_tags[@]}"; do
+            if [[ -n "${active_release_tags[$tag]+x}" ]]; then
+              continue
+            fi
+
+            if [[ "$tag" =~ $tag_pattern ]]; then
+              tag_date="${BASH_REMATCH[1]}"
+
+              if [[ "$tag_date" < "$cutoff_date" ]]; then
+                echo "Deleting old orphaned tag: $tag"
+                git push origin --delete "$tag"
+              fi
             fi
           done
+```
+
+После сохранения файла запусти workflow вручную. Он заново создаст текущий релиз, и cleanup его уже не удалит.
